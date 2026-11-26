@@ -9,7 +9,7 @@ Control your own second Android phone over the same Wi-Fi or a hotspot.
 Hotspot: join the hosting phone's hotspot; its IP is usually 192.168.43.1.
 
 ## Updating from inside the app
-Open the app; if a newer GitHub Release exists, tap **Update now**. This only works when every build is signed with the same key (add the 4 signing secrets).
+Open the app; if a newer GitHub Release exists, tap **Update now**. Builds are signed with the key in app/alma-release.p12, so updates install over the old app. This needs a public repo; for a private repo use **Open releases page to update** and install the downloaded APK.
 
 ## GitHub
 Push this folder to a new repo. Every push builds an APK and attaches it to a Release.

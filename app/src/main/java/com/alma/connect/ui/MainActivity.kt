@@ -57,10 +57,12 @@ fun App() {
     val ver = remember { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
     var upd by remember { mutableStateOf<Updater.Info?>(null) }
     var prog by remember { mutableStateOf(-1) }
+    var priv by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Checking for updates...") }
     LaunchedEffect(Unit) {
         upd = withContext(Dispatchers.IO) { Updater.check(ctx) }
-        status = if (upd != null) "A new version is available." else "No new version found."
+        priv = Updater.priv
+        status = if (upd != null) "A new version is available." else if (priv) "Auto-update cannot see a private repository." else "No new version found."
     }
     when (screen) {
         "controlled" -> Controlled { screen = "home" }
@@ -74,6 +76,9 @@ fun App() {
             OutlinedButton({ screen = "controlled" }, Modifier.fillMaxWidth()) { Text("Make this device controllable") }
             TextButton({ screen = "log" }, Modifier.fillMaxWidth()) { Text("Connection log") }
             Text("Version $ver. $status", style = MaterialTheme.typography.bodySmall)
+            if (priv) TextButton({
+                ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/${Updater.REPO}/releases")))
+            }, Modifier.fillMaxWidth()) { Text("Open releases page to update") }
             upd?.let { u ->
                 Button({
                     prog = 0

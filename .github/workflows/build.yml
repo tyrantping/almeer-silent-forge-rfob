@@ -11,25 +11,17 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.9" }
-      - name: Version
-        run: echo "VER=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-      - name: Build
+      - name: Version and signing key
         env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY: 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
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
-            export KEYSTORE_PATH="$RUNNER_TEMP/release.p12"
-            gradle -PverCode=$VER assembleRelease
-          else
-            gradle -PverCode=$VER assembleDebug
-          fi
+          echo "VER=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "$KEY" | base64 -d > app/alma-release.p12
+      - name: Build
+        run: gradle -PverCode=$VER -PghRepo=$GITHUB_REPOSITORY assembleRelease
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ env.VER }}
-          name: Alma Connect 0.5.${{ env.VER }}
+          name: Alma Connect 0.6.${{ env.VER }}
           make_latest: true
           files: app/build/outputs/apk/*/*.apk

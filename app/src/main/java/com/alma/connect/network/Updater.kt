@@ -11,13 +11,15 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object Updater {
-    const val REPO = "tyrantping/almeer-silent-forge-rfob"
+    val REPO: String = com.alma.connect.BuildConfig.REPO
+    @Volatile var priv = false
     data class Info(val code: Long, val name: String, val url: String)
 
     fun check(ctx: Context): Info? = runCatching {
         val c = URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as HttpURLConnection
         c.setRequestProperty("Accept", "application/vnd.github+json")
         c.connectTimeout = 8000; c.readTimeout = 8000
+        if (c.responseCode == 404) { priv = true; return@runCatching null }
         val j = JSONObject(c.inputStream.bufferedReader().readText())
         val code = j.getString("tag_name").removePrefix("build-").toLong()
         val cur = ctx.packageManager.getPackageInfo(ctx.packageName, 0).longVersionCode

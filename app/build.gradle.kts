@@ -10,21 +10,19 @@ android {
         applicationId = "com.alma.connect"
         minSdk = 26; targetSdk = 35
         val vc = (project.findProperty("verCode") as String?)?.toInt() ?: 4
-        versionCode = vc; versionName = "0.5.$vc"
+        buildConfigField("String", "REPO", "\"${project.findProperty("ghRepo") ?: "tyrantping/almeer-silent-forge-1kkp"}\"")
+        versionCode = vc; versionName = "0.6.$vc"
     }
-    val ks = System.getenv("KEYSTORE_PATH")
-    if (ks != null) signingConfigs.create("rel") {
-        storeFile = file(ks); storeType = "pkcs12"
-        storePassword = System.getenv("KEYSTORE_PASSWORD")
-        keyAlias = System.getenv("KEY_ALIAS")
-        keyPassword = System.getenv("KEY_PASSWORD")
+    signingConfigs.create("rel") {
+        storeFile = file("alma-release.p12"); storeType = "pkcs12"
+        storePassword = "dc43678f0f9cbbe0f212cd6637c83e29"; keyAlias = "alma"; keyPassword = "dc43678f0f9cbbe0f212cd6637c83e29"
     }
     buildTypes {
-        release { if (ks != null) signingConfig = signingConfigs.getByName("rel") }
+        release { signingConfig = signingConfigs.getByName("rel") }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 dependencies {
