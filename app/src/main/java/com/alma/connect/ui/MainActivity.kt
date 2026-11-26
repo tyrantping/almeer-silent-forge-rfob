@@ -1,6 +1,15 @@
 package com.alma.connect.ui
 
 import android.Manifest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.res.painterResource
+import com.alma.connect.R
 import android.app.Activity
 import android.graphics.BitmapFactory
 import android.media.projection.MediaProjectionManager
@@ -43,14 +52,38 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun App() {
     var screen by remember { mutableStateOf("home") }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val ver = remember { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
+    var upd by remember { mutableStateOf<Updater.Info?>(null) }
+    var prog by remember { mutableStateOf(-1) }
+    var status by remember { mutableStateOf("Checking for updates...") }
+    LaunchedEffect(Unit) {
+        upd = withContext(Dispatchers.IO) { Updater.check(ctx) }
+        status = if (upd != null) "A new version is available." else "No new version found."
+    }
     when (screen) {
         "controlled" -> Controlled { screen = "home" }
         "controller" -> Controller { screen = "home" }
+        "log" -> LogScreen { screen = "home" }
         else -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp, androidx.compose.ui.Alignment.CenterVertically)) {
+            Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.size(120.dp))
             Text("Alma Connect", style = MaterialTheme.typography.headlineLarge)
             Text("Control your own phone over Wi-Fi or hotspot.")
             Button({ screen = "controller" }, Modifier.fillMaxWidth()) { Text("Control a device") }
             OutlinedButton({ screen = "controlled" }, Modifier.fillMaxWidth()) { Text("Make this device controllable") }
+            TextButton({ screen = "log" }, Modifier.fillMaxWidth()) { Text("Connection log") }
+            Text("Version $ver. $status", style = MaterialTheme.typography.bodySmall)
+            upd?.let { u ->
+                Button({
+                    prog = 0
+                    scope.launch {
+                        val f = withContext(Dispatchers.IO) { Updater.download(ctx, u.url) { prog = it } }
+                        prog = -1
+                        if (f != null) Updater.install(ctx, f) else status = "Download failed. Try again."
+                    }
+                }, Modifier.fillMaxWidth()) { Text(if (prog >= 0) "Downloading $prog%" else "Update now") }
+            }
         }
     }
 }
@@ -63,6 +96,7 @@ fun Controlled(back: () -> Unit) {
     val on by Hub.connected.collectAsState()
     fun svc(a: String? = null) = Intent(ctx, ControlService::class.java).also { if (a != null) it.action = a }
     val sharing by Hub.sharing.collectAsState()
+    val a11y by Hub.a11y.collectAsState()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == Activity.RESULT_OK && r.data != null)
             ctx.startForegroundService(svc("projection").putExtra("code", r.resultCode).putExtra("data", r.data))
@@ -72,6 +106,7 @@ fun Controlled(back: () -> Unit) {
         Text(code.ifEmpty { "Not running" }, style = MaterialTheme.typography.displayMedium)
         if (on) Text("A controller is connected.")
         if (sharing) Text("Screen sharing is ON.")
+        Text(if (a11y) "Accessibility: ON" else "Accessibility: OFF (taps and buttons will not work)")
         Button({ ctx.startForegroundService(svc()) }, Modifier.fillMaxWidth()) { Text("Start") }
         Button({ launcher.launch(ctx.getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent()) }, Modifier.fillMaxWidth()) { Text("Share screen") }
         OutlinedButton({ ctx.startService(svc("revoke")) }, Modifier.fillMaxWidth()) { Text("Disconnect and revoke all") }
@@ -92,11 +127,13 @@ fun Controlled(back: () -> Unit) {
 fun Controller(back: () -> Unit) {
     val ctx = LocalContext.current
     val found by Hub.found.collectAsState()
-    var host by remember { mutableStateOf("") }
+    var host by remember { mutableStateOf(ctx.getSharedPreferences("alma", 0).getString("host", "") ?: "") }
     var code by remember { mutableStateOf("") }
     var state by remember { mutableStateOf("idle") }
     var frame by remember { mutableStateOf<ImageBitmap?>(null) }
     var typed by remember { mutableStateOf("") }
+    var warn by remember { mutableStateOf(false) }
+    var showCtl by remember { mutableStateOf(true) }
     val holder = remember { arrayOfNulls<AlmaClient>(1) }
     val disc = remember { Discovery(ctx) }
     DisposableEffect(Unit) { disc.start(); onDispose { disc.stop(); holder[0]?.close() } }
@@ -104,19 +141,28 @@ fun Controller(back: () -> Unit) {
 
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state == "ok") {
-            Text("Connected. Tap or drag on the screen.")
+            Text("Connected. Tap, hold or drag on the screen.")
+            if (warn) Text("Accessibility is OFF on the other phone, so taps will not work. Turn it on there.", color = MaterialTheme.colorScheme.error)
             Box(Modifier.fillMaxWidth().weight(1f).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             Box(Modifier.aspectRatio(frame?.let { it.width.toFloat() / it.height } ?: 0.5f, true)
-                .pointerInput(Unit) { detectTapGestures { send("a" to "tap", "x" to it.x / size.width, "y" to it.y / size.height) } }
                 .pointerInput(Unit) {
-                    var s = Offset.Zero; var e = Offset.Zero
-                    detectDragGestures(onDragStart = { s = it; e = it },
-                        onDragEnd = {
-                            send("a" to "swipe", "x1" to s.x / size.width, "y1" to s.y / size.height,
-                                "x2" to e.x / size.width, "y2" to e.y / size.height)
-                        }) { ch, _ -> e = ch.position }
+                    awaitEachGesture {
+                        val d = awaitFirstDown(requireUnconsumed = false)
+                        fun t(k: String, p: Offset) = send("a" to "touch", "k" to k,
+                            "x" to (p.x / size.width).coerceIn(0f, 1f), "y" to (p.y / size.height).coerceIn(0f, 1f))
+                        t("d", d.position)
+                        var last = 0L
+                        while (true) {
+                            val c = awaitPointerEvent().changes.firstOrNull() ?: break
+                            if (!c.pressed) { t("u", c.position); break }
+                            val now = System.currentTimeMillis()
+                            if (now - last >= 25) { t("m", c.position); last = now }
+                        }
+                    }
                 }) { frame?.let { Image(it, null, Modifier.fillMaxSize()) } }
             }
+            TextButton({ showCtl = !showCtl }) { Text(if (showCtl) "Hide buttons" else "Show buttons") }
+            if (showCtl) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("Back" to "back", "Home" to "home", "Recents" to "recents").forEach { (l, a) ->
                     Button({ send("a" to a) }, Modifier.weight(1f)) { Text(l, maxLines = 1) } }
@@ -126,9 +172,18 @@ fun Controller(back: () -> Unit) {
                     OutlinedButton({ send("a" to a) }, Modifier.weight(1f)) { Text(l, maxLines = 1) } }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Notifs" to "notif", "Quick" to "quick", "Wake" to "wake").forEach { (l, a) ->
+                    OutlinedButton({ send("a" to a) }, Modifier.weight(1f)) { Text(l, maxLines = 1) } }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Low quality" to 0, "Medium" to 1, "High" to 2).forEach { (l, v) ->
+                    OutlinedButton({ send("a" to "quality", "v" to v) }, Modifier.weight(1f)) { Text(l, maxLines = 1) } }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(typed, { typed = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text("Type on device") })
                 Button({ send("a" to "text", "s" to typed); typed = "" }) { Text("Send") }
                 OutlinedButton({ send("a" to "text", "s" to "\b") }) { Text("Del") }
+            }
             }
         } else {
             Text("Devices found", style = MaterialTheme.typography.titleMedium)
@@ -136,8 +191,8 @@ fun Controller(back: () -> Unit) {
             OutlinedTextField(host, { host = it }, label = { Text("Device IP (e.g. 192.168.43.1 for hotspot)") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(code, { code = it }, label = { Text("6-digit code") }, modifier = Modifier.fillMaxWidth())
             Button({
-                state = "connecting"
-                holder[0] = AlmaClient(URI("ws://$host:${Hub.PORT}"), code, Build.MODEL, { state = it },
+                state = "connecting"; ctx.getSharedPreferences("alma", 0).edit().putString("host", host).apply()
+                holder[0] = AlmaClient(URI("ws://$host:${Hub.PORT}"), code, Build.MODEL, { if (it == "noa11y") warn = true else state = it },
                     { b -> BitmapFactory.decodeByteArray(b, 0, b.size)?.let { frame = it.asImageBitmap() } }).also { it.connect() }
             }, Modifier.fillMaxWidth()) { Text("Connect") }
             if (state != "idle") Text(when (state) {
@@ -145,6 +200,17 @@ fun Controller(back: () -> Unit) {
                 "deny" -> "Denied or wrong code."
                 else -> "Connection failed ($state)." })
         }
+        TextButton(back) { Text("Back") }
+    }
+}
+
+@Composable
+fun LogScreen(back: () -> Unit) {
+    val logs by Hub.logs.collectAsState()
+    Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Connection log", style = MaterialTheme.typography.titleLarge)
+        if (logs.isEmpty()) Text("Nothing yet.")
+        logs.asReversed().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
         TextButton(back) { Text("Back") }
     }
 }

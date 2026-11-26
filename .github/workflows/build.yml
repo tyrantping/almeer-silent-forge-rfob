@@ -11,6 +11,8 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.9" }
+      - name: Version
+        run: echo "VER=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
       - name: Build
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -19,13 +21,15 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            export KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
-            gradle assembleRelease
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
+            export KEYSTORE_PATH="$RUNNER_TEMP/release.p12"
+            gradle -PverCode=$VER assembleRelease
           else
-            gradle assembleDebug
+            gradle -PverCode=$VER assembleDebug
           fi
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
+          tag_name: build-${{ env.VER }}
+          name: Alma Connect 0.5.${{ env.VER }}
+          make_latest: true
           files: app/build/outputs/apk/*/*.apk

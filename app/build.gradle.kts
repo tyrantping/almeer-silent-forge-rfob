@@ -9,11 +9,12 @@ android {
     defaultConfig {
         applicationId = "com.alma.connect"
         minSdk = 26; targetSdk = 35
-        versionCode = 1; versionName = "0.1"
+        val vc = (project.findProperty("verCode") as String?)?.toInt() ?: 4
+        versionCode = vc; versionName = "0.5.$vc"
     }
     val ks = System.getenv("KEYSTORE_PATH")
     if (ks != null) signingConfigs.create("rel") {
-        storeFile = file(ks)
+        storeFile = file(ks); storeType = "pkcs12"
         storePassword = System.getenv("KEYSTORE_PASSWORD")
         keyAlias = System.getenv("KEY_ALIAS")
         keyPassword = System.getenv("KEY_PASSWORD")

@@ -8,12 +8,19 @@ Control your own second Android phone over the same Wi-Fi or a hotspot.
 4. Second phone taps **Allow**. Use the touchpad and buttons.
 Hotspot: join the hosting phone's hotspot; its IP is usually 192.168.43.1.
 
+## Updating from inside the app
+Open the app; if a newer GitHub Release exists, tap **Update now**. This only works when every build is signed with the same key (add the 4 signing secrets).
+
 ## GitHub
 Push this folder to a new repo. Every push builds an APK and attaches it to a Release.
 For a signed release APK add Actions secrets: KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD.
 Without them a debug APK is built.
 
 ## Not yet built
-Bluetooth, TLS, QR pairing, file transfer, clipboard sync, log screen.
+Bluetooth, QR pairing, file transfer, clipboard sync, sound streaming, pinch-zoom, landscape.
+
+All traffic is encrypted (ECDH + AES-256-GCM, key bound to the pairing code). Version 0.4 is not compatible with older versions: update both phones.
+
+Taps not working? On the controlled phone: Settings > Apps > Alma Connect > top-right menu > **Allow restricted settings**, then Settings > Accessibility > Alma Connect > On.
 
 Live screen view: on the second phone tap **Share screen** and accept the Android prompt.
